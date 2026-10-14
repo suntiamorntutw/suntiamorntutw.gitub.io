@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vital Signa Record</title>
+<!--
+  สมุดบันทึกสัญญาณชีพ (Google Sign-In + Google Drive)
+  - ไม่มี backend: ทำงานในเบราว์เซอร์ล้วนๆ ข้อมูลเก็บเป็นไฟล์ JSON ใน Google Drive ของผู้ใช้เอง
+  - ตั้งค่า: ใส่ OAuth Client ID ที่ตัวแปร CLIENT_ID ด้านล่างสุดของไฟล์
+  - ต้องเปิดผ่าน http(s) เช่น https://yourdomain หรือ http://localhost:8080 (เปิดจาก file:// ไม่ได้)
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  box-sizing: border-box;
+  --bg: #eef3f2; --surface: #ffffff; --surface-2: #f5f8f7;
+  --ink: #12333a; --ink-soft: #4d6b71; --line: #d3dedc;
+  --sys: #3a46c4; --dia: #0d8a8c; --hr: #c0305a;
+  --accent: #12333a; --accent-ink: #ffffff;
+  --warn-bg: #fdecd3; --warn-ink: #7a4a00;
+  --bad-bg: #fbdfe3; --bad-ink: #8a1230;
+  --ok-bg: #d9f1e6; --ok-ink: #0c5a3a;
+  --low-bg: #dfe6fb; --low-ink: #26308f;
+  --focus: #3a46c4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1a1d; --surface: #152428; --surface-2: #1b2e33;
+    --ink: #e6f0ee; --ink-soft: #9db6b3; --line: #2b4247;
+    --sys: #8e98ff; --dia: #4fd0d2; --hr: #ff7fa1;
+    --accent: #e6f0ee; --accent-ink: #0d1a1d;
+    --warn-bg: #3d2d10; --warn-ink: #ffd391;
+    --bad-bg: #44161f; --bad-ink: #ffb3c1;
+    --ok-bg: #123b2b; --ok-ink: #9ae3c0;
+    --low-bg: #1e2757; --low-ink: #b5bdff;
+    --focus: #8e98ff;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1a1d; --surface: #152428; --surface-2: #1b2e33;
+  --ink: #e6f0ee; --ink-soft: #9db6b3; --line: #2b4247;
+  --sys: #8e98ff; --dia: #4fd0d2; --hr: #ff7fa1;
+  --accent: #e6f0ee; --accent-ink: #0d1a1d;
+  --warn-bg: #3d2d10; --warn-ink: #ffd391;
+  --bad-bg: #44161f; --bad-ink: #ffb3c1;
+  --ok-bg: #123b2b; --ok-ink: #9ae3c0;
+  --low-bg: #1e2757; --low-ink: #b5bdff;
+  --focus: #8e98ff;
+}
+*, *::before, *::after { box-sizing: inherit; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", "Sarabun", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px; line-height: 1.55; }
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.wrap { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
+header.top { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+h1 { font-size: 1.6rem; line-height: 1.2; margin: 0; font-weight: 600; }
+.sub { margin: 4px 0 0; color: var(--ink-soft); font-size: .92rem; }
+.acct { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .88rem; color: var(--ink-soft); }
+.acct .email { color: var(--ink); font-weight: 500; overflow-wrap: anywhere; }
+
+.layout { display: grid; gap: 16px; grid-template-columns: 1fr;
+  grid-template-areas: "banner" "latest" "form" "chart" "history"; }
+@media (min-width: 900px) {
+  .layout { grid-template-columns: 340px 1fr; align-items: start;
+    grid-template-areas: "banner banner" "form latest" "form chart" "form history"; }
+  #formCard { position: sticky; top: 16px; }
+}
+.banner { grid-area: banner; } .latest { grid-area: latest; } #formCard { grid-area: form; } .chartCard { grid-area: chart; } .historyCard { grid-area: history; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 18px; }
+.card h2 { margin: 0 0 12px; font-size: 1.05rem; font-weight: 600; }
+
+/* sign-in */
+.auth { max-width: 460px; margin: 8vh auto 0; text-align: left; display: grid; gap: 14px; }
+.auth h2 { margin: 0; font-size: 1.3rem; }
+.auth p { margin: 0; color: var(--ink-soft); }
+.auth ul { margin: 0; padding-left: 1.2em; color: var(--ink-soft); font-size: .92rem; }
+
+/* status */
+.sync { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: .9rem; padding: 10px 14px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); color: var(--ink-soft); }
+.sync[data-state="saved"] { background: var(--ok-bg); color: var(--ok-ink); border-color: transparent; }
+.sync[data-state="saving"], .sync[data-state="loading"] { background: var(--low-bg); color: var(--low-ink); border-color: transparent; }
+.sync[data-state="error"], .sync[data-state="expired"] { background: var(--bad-bg); color: var(--bad-ink); border-color: transparent; }
+
+/* latest */
+.latest { display: grid; gap: 14px; }
+.big { display: flex; align-items: baseline; gap: 22px; flex-wrap: wrap; }
+.big .bp { font-size: clamp(3rem, 10vw, 4.6rem); line-height: 1; font-weight: 500; letter-spacing: -0.02em; }
+.big .bp .s { color: var(--sys); } .big .bp .slash { color: var(--ink-soft); font-weight: 400; margin: 0 .05em; } .big .bp .d { color: var(--dia); }
+.big .hr { font-size: clamp(2rem, 6vw, 2.8rem); line-height: 1; font-weight: 500; color: var(--hr); }
+.unit { font-size: .85rem; font-weight: 400; color: var(--ink-soft); margin-left: 4px; letter-spacing: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; color: var(--ink-soft); font-size: .9rem; }
+.chip { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: .84rem; font-weight: 500; }
+.chip.ok { background: var(--ok-bg); color: var(--ok-ink); }
+.chip.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.chip.bad { background: var(--bad-bg); color: var(--bad-ink); }
+.chip.low { background: var(--low-bg); color: var(--low-ink); }
+.avg { display: flex; flex-wrap: wrap; gap: 6px 20px; border-top: 1px solid var(--line); padding-top: 12px; color: var(--ink-soft); font-size: .92rem; }
+.avg b { color: var(--ink); font-weight: 600; }
+
+/* form */
+form { display: grid; gap: 12px; }
+label { display: grid; gap: 4px; font-size: .9rem; font-weight: 500; }
+label small { font-weight: 400; color: var(--ink-soft); }
+input, textarea { font: inherit; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; min-height: 44px; }
+textarea { resize: vertical; min-height: 76px; }
+.sysdia { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.err { color: var(--bad-ink); background: var(--bad-bg); border-radius: 10px; padding: 8px 12px; font-size: .9rem; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: inherit; cursor: pointer; border-radius: 10px; min-height: 44px; padding: 0 16px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; flex: 1; }
+button.small { min-height: 36px; padding: 0 12px; font-size: .88rem; }
+button.danger { color: var(--bad-ink); border-color: var(--bad-ink); }
+button:disabled { opacity: .55; cursor: not-allowed; }
+.editing { box-shadow: 0 0 0 3px var(--focus); }
+.hint { font-size: .8rem; color: var(--ink-soft); margin: 0; }
+
+/* chart */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .86rem; color: var(--ink-soft); margin-bottom: 8px; }
+.legend i { display: inline-block; width: 18px; height: 4px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.chartBox { overflow-x: auto; }
+svg.chart { width: 100%; height: auto; min-width: 420px; display: block; }
+svg.chart text { fill: var(--ink-soft); font-size: 11px; font-family: inherit; }
+svg.chart .grid { stroke: var(--line); stroke-width: 1; }
+.empty { color: var(--ink-soft); padding: 18px 4px; text-align: center; }
+
+/* history */
+.histHead { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+.histHead h2 { margin: 0; }
+.list { display: grid; }
+.item { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; padding: 12px 0; border-top: 1px solid var(--line); }
+.item:first-child { border-top: 0; }
+.item .when { font-weight: 500; }
+.item .vals { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+.item .vals .bpv { font-weight: 600; } .item .vals .bpv .s { color: var(--sys); } .item .vals .bpv .d { color: var(--dia); }
+.item .vals .hrv { font-weight: 600; color: var(--hr); }
+.item .note { grid-column: 1 / -1; color: var(--ink-soft); font-size: .92rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.item .btns { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }
+.item.isEditing { background: var(--surface-2); margin: 0 -10px; padding: 12px 10px; border-radius: 10px; }
+.foot { margin-top: 14px; font-size: .8rem; color: var(--ink-soft); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--accent); color: var(--accent-ink); padding: 10px 18px; border-radius: 999px; font-size: .92rem; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 10; }
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>สมุดบันทึกสัญญาณชีพ</h1>
+      <p class="sub">ความดันโลหิตและอัตราการเต้นของหัวใจ เก็บใน Google Drive ของคุณเอง</p>
+    </div>
+    <div class="acct" id="acct" hidden>
+      <span class="email" id="email"></span>
+      <button type="button" class="small" id="signOutBtn">ออกจากระบบ</button>
+    </div>
+  </header>
+
+  <!-- ===== Sign-in screen ===== -->
+  <section class="card auth" id="authCard">
+    <h2>เข้าสู่ระบบด้วยบัญชี Google</h2>
+    <p>ใช้บัญชี Gmail ของคุณเพื่อบันทึกและเปิดดูประวัติสัญญาณชีพจากทุกอุปกรณ์</p>
+    <ul>
+      <li>ข้อมูลเก็บเป็นไฟล์ <b>vital-signs-data.json</b> ใน Google Drive ของคุณ</li>
+      <li>แอปเข้าถึงได้เฉพาะไฟล์ที่แอปนี้สร้างเอง ไม่เห็นไฟล์อื่นใน Drive</li>
+      <li>ไม่มีเซิร์ฟเวอร์กลางเก็บข้อมูล</li>
+    </ul>
+    <div class="err" id="authErr" role="alert" hidden></div>
+    <button type="button" class="primary" id="signInBtn" disabled>เข้าสู่ระบบด้วย Google</button>
+  </section>
+
+  <!-- ===== App ===== -->
+  <main class="layout" id="app" hidden>
+    <div class="banner sync" id="sync" data-state="loading" role="status">
+      <span id="syncText">กำลังโหลดข้อมูลจาก Google Drive…</span>
+      <button type="button" class="small" id="syncAction" hidden></button>
+    </div>
+
+    <section class="card latest" id="latestCard" aria-live="polite"></section>
+
+    <section class="card" id="formCard">
+      <h2 id="formTitle">เพิ่มบันทึกใหม่</h2>
+      <form id="form" novalidate>
+        <label>วันและเวลาที่วัด
+          <input type="datetime-local" id="dt" required>
+        </label>
+        <div class="sysdia">
+          <label>ตัวบน (SYS)
+            <input type="number" id="sys" inputmode="numeric" min="50" max="260" placeholder="120" required>
+            <small>mmHg</small>
+          </label>
+          <label>ตัวล่าง (DIA)
+            <input type="number" id="dia" inputmode="numeric" min="30" max="160" placeholder="80" required>
+            <small>mmHg</small>
+          </label>
+        </div>
+        <label>อัตราการเต้นของหัวใจ
+          <input type="number" id="hr" inputmode="numeric" min="20" max="250" placeholder="72" required>
+          <small>ครั้งต่อนาที (bpm)</small>
+        </label>
+        <label>บันทึกเพิ่มเติม
+          <textarea id="note" maxlength="500" placeholder="เช่น หลังตื่นนอน นั่งพัก 5 นาที แขนซ้าย ทานยาแล้ว"></textarea>
+        </label>
+        <div class="err" id="err" role="alert" hidden></div>
+        <div class="actions">
+          <button type="submit" class="primary" id="saveBtn">บันทึก</button>
+          <button type="button" id="cancelBtn" hidden>ยกเลิกการแก้ไข</button>
+        </div>
+        <p class="hint">เกณฑ์ที่แสดงเป็นแนวทางทั่วไป ไม่ใช่การวินิจฉัย หากมีอาการผิดปกติให้ปรึกษาแพทย์</p>
+      </form>
+    </section>
+
+    <section class="card chartCard">
+      <h2>แนวโน้มย้อนหลัง</h2>
+      <div class="legend" aria-hidden="true">
+        <span><i style="background:var(--sys)"></i>ตัวบน</span>
+        <span><i style="background:var(--dia)"></i>ตัวล่าง</span>
+        <span><i style="background:var(--hr)"></i>ชีพจร</span>
+      </div>
+      <div class="chartBox" id="chartBox"></div>
+    </section>
+
+    <section class="card historyCard">
+      <div class="histHead">
+        <h2>ประวัติการบันทึก <span class="num" id="count" style="color:var(--ink-soft);font-weight:400"></span></h2>
+        <button type="button" class="small" id="exportBtn" disabled>ส่งออก CSV</button>
+      </div>
+      <div class="list" id="list"></div>
+      <p class="foot">ข้อมูลทั้งหมดอยู่ในไฟล์ vital-signs-data.json บน Google Drive ของคุณ</p>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script src="https://accounts.google.com/gsi/client" async defer onload="window.__gisReady && window.__gisReady()"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+     ตั้งค่า: วาง OAuth Client ID (ชนิด Web application) ที่นี่
+     ============================================================ */
+  var CLIENT_ID = "996131489874-mq4qlbf0meo0okr4hqbgs3bsab2figod.apps.googleusercontent.com";
+
+  var SCOPES = "openid email profile https://www.googleapis.com/auth/drive.file";
+  var FILE_NAME = "vital-signs-data.json";
+  var API = "https://www.googleapis.com/drive/v3/files";
+  var UPLOAD = "https://www.googleapis.com/upload/drive/v3/files";
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // ---------- state ----------
+  var tokenClient = null, accessToken = null;
+  var fileId = null;
+  var readings = [];
+  var loaded = false;
+  var editingId = null, confirmingId = null;
+  var saving = false, dirty = false;
+
+  // ---------- helpers ----------
+  function pad(n) { return String(n).padStart(2, "0"); }
+  function nowLocal() {
+    var d = new Date();
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+  function newId() { return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+  function fmtDate(dt) {
+    var d = new Date(dt);
+    if (isNaN(d)) return dt;
+    try { return d.toLocaleString("th-TH", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) + " น."; }
+    catch (e) { return dt; }
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function sorted(desc) {
+    var a = readings.slice().sort(function (x, y) {
+      return x.dt < y.dt ? -1 : x.dt > y.dt ? 1 : (x.updated || 0) - (y.updated || 0);
+    });
+    return desc ? a.reverse() : a;
+  }
+  function category(s, d) {
+    if (s > 180 || d > 120) return { t: "สูงมาก ควรปรึกษาแพทย์", c: "bad" };
+    if (s >= 140 || d >= 90) return { t: "ความดันสูง ระดับ 2", c: "bad" };
+    if (s >= 130 || d >= 80) return { t: "ความดันสูง ระดับ 1", c: "warn" };
+    if (s >= 120) return { t: "สูงเล็กน้อย", c: "warn" };
+    if (s < 90 || d < 60) return { t: "ค่อนข้างต่ำ", c: "low" };
+    return { t: "ปกติ", c: "ok" };
+  }
+  var toastTimer;
+  function toast(msg) {
+    var t = $("toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.classList.remove("show"); }, 2400);
+  }
+
+  // ---------- sync status ----------
+  function setSync(state, text, actionLabel, actionFn) {
+    var box = $("sync"); box.dataset.state = state;
+    $("syncText").textContent = text;
+    var b = $("syncAction");
+    if (actionLabel) { b.hidden = false; b.textContent = actionLabel; b.onclick = actionFn; }
+    else { b.hidden = true; b.onclick = null; }
+  }
+  function hhmm() { var d = new Date(); return pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+
+  // ---------- Drive API ----------
+  function authError() { var e = new Error("auth"); e.code = 401; return e; }
+  function drive(url, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ Authorization: "Bearer " + accessToken }, opts.headers || {});
+    return fetch(url, opts).then(function (r) {
+      if (r.status === 401) throw authError();
+      if (!r.ok) { var e = new Error("HTTP " + r.status); e.code = r.status; throw e; }
+      return r;
+    });
+  }
+
+  function findFile() {
+    var q = "name='" + FILE_NAME + "' and trashed=false";
+    var url = API + "?q=" + encodeURIComponent(q) + "&fields=" + encodeURIComponent("files(id,modifiedTime)") + "&orderBy=modifiedTime%20desc&pageSize=1&spaces=drive";
+    return drive(url).then(function (r) { return r.json(); }).then(function (j) { return (j.files && j.files[0]) || null; });
+  }
+
+  function loadData() {
+    loaded = false;
+    setSync("loading", "กำลังโหลดข้อมูลจาก Google Drive…");
+    return findFile().then(function (f) {
+      if (!f) { fileId = null; readings = []; return; }
+      fileId = f.id;
+      return drive(API + "/" + f.id + "?alt=media").then(function (r) { return r.json(); }).then(function (j) {
+        readings = (j && Array.isArray(j.readings) ? j.readings : []).filter(function (r) {
+          return r && typeof r.sys === "number" && typeof r.dia === "number" && typeof r.hr === "number" && r.dt;
+        });
+      });
+    }).then(function () {
+      loaded = true;
+      setSync("saved", fileId ? "โหลดข้อมูลจาก Drive แล้ว" : "ยังไม่มีไฟล์ข้อมูล ระบบจะสร้างใน Drive เมื่อบันทึกครั้งแรก");
+      render();
+    });
+  }
+
+  function writeToDrive() {
+    var body = JSON.stringify({ version: 1, readings: readings });
+    if (!fileId) {
+      var boundary = "vitals" + Date.now();
+      var meta = JSON.stringify({ name: FILE_NAME, mimeType: "application/json" });
+      var multipart = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + meta +
+        "\r\n--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + body + "\r\n--" + boundary + "--";
+      return drive(UPLOAD + "?uploadType=multipart&fields=id", {
+        method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body: multipart
+      }).then(function (r) { return r.json(); }).then(function (j) { fileId = j.id; });
+    }
+    return drive(UPLOAD + "/" + fileId + "?uploadType=media", {
+      method: "PATCH", headers: { "Content-Type": "application/json; charset=UTF-8" }, body: body
+    });
+  }
+
+  // Saves are serialized: one write at a time, always the latest data.
+  function persist() {
+    dirty = true;
+    if (saving) return;
+    saving = true;
+    setSync("saving", "กำลังบันทึกลง Google Drive…");
+    (function loop() {
+      if (!dirty) {
+        saving = false;
+        setSync("saved", "บันทึกลง Google Drive แล้ว · " + hhmm());
+        return;
+      }
+      dirty = false;
+      writeToDrive().then(loop).catch(function (e) {
+        dirty = true; saving = false;
+        if (e && e.code === 401) {
+          accessToken = null;
+          setSync("expired", "เซสชันหมดอายุ ข้อมูลล่าสุดยังไม่ถูกบันทึก", "เข้าสู่ระบบใหม่", function () { requestToken(); });
+        } else {
+          setSync("error", "บันทึกลง Drive ไม่สำเร็จ (ข้อมูลยังอยู่ในหน้านี้)", "ลองอีกครั้ง", function () { persist(); });
+        }
+      });
+    })();
+  }
+
+  window.addEventListener("beforeunload", function (e) {
+    if (dirty || saving) { e.preventDefault(); e.returnValue = ""; }
+  });
+
+  // ---------- auth ----------
+  function showAuthErr(msg) { var e = $("authErr"); e.textContent = msg || ""; e.hidden = !msg; }
+
+  function onToken(resp) {
+    if (resp.error) { showAuthErr("เข้าสู่ระบบไม่สำเร็จ: " + resp.error); return; }
+    if (!google.accounts.oauth2.hasGrantedAllScopes(resp, "https://www.googleapis.com/auth/drive.file")) {
+      showAuthErr("ต้องอนุญาตสิทธิ์เข้าถึงไฟล์ที่แอปสร้างใน Google Drive จึงจะบันทึกข้อมูลได้ กรุณาลองใหม่และเลือกอนุญาตทุกรายการ");
+      return;
+    }
+    var firstLogin = !$("app").dataset.ready;
+    accessToken = resp.access_token;
+    showAuthErr("");
+    if (!firstLogin) {
+      // re-auth after expiry: keep the in-memory data, push unsaved changes
+      setSync("saving", "กำลังบันทึกลง Google Drive…");
+      if (dirty) { saving = false; persist(); } else { setSync("saved", "เข้าสู่ระบบอีกครั้งแล้ว"); }
+      return;
+    }
+    fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: "Bearer " + accessToken } })
+      .then(function (r) { return r.ok ? r.json() : {}; })
+      .catch(function () { return {}; })
+      .then(function (u) {
+        $("email").textContent = u.email || "บัญชี Google";
+        $("acct").hidden = false;
+        $("authCard").hidden = true;
+        $("app").hidden = false;
+        $("app").dataset.ready = "1";
+        resetForm();
+        render();
+        return loadData();
+      })
+      .catch(function (e) {
+        if (e && e.code === 401) { setSync("expired", "เซสชันหมดอายุ", "เข้าสู่ระบบใหม่", function () { requestToken(); }); }
+        else if (e && e.code === 403) { setSync("error", "ไม่ได้เปิดใช้ Google Drive API ในโปรเจกต์ หรือไม่มีสิทธิ์เข้าถึง", "ลองอีกครั้ง", function () { loadData().catch(function () {}); }); }
+        else { setSync("error", "โหลดข้อมูลจาก Drive ไม่สำเร็จ", "ลองอีกครั้ง", function () { loadData().catch(function () { setSync("error", "โหลดข้อมูลไม่สำเร็จ"); }); }); }
+      });
+  }
+
+  function requestToken() {
+    if (!tokenClient) return;
+    tokenClient.requestAccessToken();
+  }
+
+  window.__gisReady = function () {
+    if (!window.google || !google.accounts) return;
+    if (CLIENT_ID.indexOf("YOUR_CLIENT_ID") === 0) {
+      showAuthErr("ยังไม่ได้ตั้งค่า CLIENT_ID ในไฟล์ index.html (ดูขั้นตอนตั้งค่า Google Cloud)");
+      return;
+    }
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID,
+      scope: SCOPES,
+      callback: onToken,
+      error_callback: function (err) {
+        if (err && err.type === "popup_closed") return;
+        showAuthErr("เปิดหน้าต่างเข้าสู่ระบบไม่สำเร็จ ตรวจสอบว่าไม่ได้บล็อกป๊อปอัป");
+      }
+    });
+    $("signInBtn").disabled = false;
+  };
+  if (window.google && google.accounts) window.__gisReady();
+
+  $("signInBtn").addEventListener("click", requestToken);
+
+  $("signOutBtn").addEventListener("click", function () {
+    if ((dirty || saving) && !confirm("ยังมีข้อมูลที่ไม่ได้บันทึกลง Drive ต้องการออกจากระบบหรือไม่?")) return;
+    var tok = accessToken;
+    if (tok && window.google) { try { google.accounts.oauth2.revoke(tok, function () {}); } catch (e) {} }
+    accessToken = null; fileId = null; readings = []; loaded = false; dirty = false; saving = false;
+    editingId = null; confirmingId = null;
+    $("app").hidden = true; $("app").dataset.ready = "";
+    $("acct").hidden = true; $("email").textContent = "";
+    $("authCard").hidden = false;
+    showAuthErr("");
+  });
+
+  // ---------- render ----------
+  function renderLatest() {
+    var el = $("latestCard");
+    var all = sorted(true);
+    if (!all.length) {
+      el.innerHTML = '<div class="empty">ยังไม่มีบันทึก กรอกค่าที่วัดได้ในแบบฟอร์มแล้วกด “บันทึก”</div>';
+      return;
+    }
+    var r = all[0], cat = category(r.sys, r.dia);
+    var weekAgo = Date.now() - 7 * 86400000;
+    var wk = all.filter(function (x) { return new Date(x.dt).getTime() >= weekAgo; });
+    var avgHtml = "";
+    if (wk.length) {
+      var m = function (k) { return Math.round(wk.reduce(function (a, x) { return a + x[k]; }, 0) / wk.length); };
+      avgHtml = '<div class="avg num"><span>เฉลี่ย 7 วัน (' + wk.length + ' ครั้ง)</span><span>ความดัน <b>' + m("sys") + "/" + m("dia") + '</b></span><span>ชีพจร <b>' + m("hr") + "</b></span></div>";
+    }
+    el.innerHTML =
+      '<div class="meta"><span>ค่าล่าสุด · ' + esc(fmtDate(r.dt)) + '</span><span class="chip ' + cat.c + '">' + cat.t + "</span></div>" +
+      '<div class="big num"><div class="bp"><span class="s">' + r.sys + '</span><span class="slash">/</span><span class="d">' + r.dia + '</span><span class="unit">mmHg</span></div>' +
+      '<div class="hr">' + r.hr + '<span class="unit">bpm</span></div></div>' + avgHtml;
+  }
+
+  function renderChart() {
+    var box = $("chartBox");
+    var data = sorted(false).slice(-30);
+    if (data.length < 2) { box.innerHTML = '<div class="empty">บันทึกอย่างน้อย 2 ครั้งเพื่อดูแนวโน้ม</div>'; return; }
+    var W = 640, H = 240, L = 36, R = 14, T = 14, B = 26;
+    var vals = [];
+    data.forEach(function (r) { vals.push(r.sys, r.dia, r.hr); });
+    var lo = Math.floor((Math.min.apply(null, vals) - 5) / 10) * 10;
+    var hi = Math.ceil((Math.max.apply(null, vals) + 5) / 10) * 10;
+    if (hi - lo < 40) hi = lo + 40;
+    var n = data.length;
+    var x = function (i) { return L + i * (W - L - R) / (n - 1); };
+    var y = function (v) { return T + (hi - v) * (H - T - B) / (hi - lo); };
+    var step = (hi - lo) > 120 ? 40 : 20;
+    var g = "";
+    for (var v = lo; v <= hi; v += step) {
+      g += '<line class="grid" x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '"/><text x="' + (L - 6) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + "</text>";
+    }
+    function line(key, color) {
+      var pts = data.map(function (r, i) { return x(i).toFixed(1) + "," + y(r[key]).toFixed(1); }).join(" ");
+      var dots = data.map(function (r, i) {
+        return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(r[key]).toFixed(1) + '" r="3" fill="' + color + '"><title>' + esc(fmtDate(r.dt)) + " · " + r[key] + "</title></circle>";
+      }).join("");
+      return '<polyline fill="none" stroke="' + color + '" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round" points="' + pts + '"/>' + dots;
+    }
+    var sd = function (dt) { var d = new Date(dt); return d.getDate() + "/" + (d.getMonth() + 1); };
+    var xl = '<text x="' + L + '" y="' + (H - 6) + '" text-anchor="start">' + sd(data[0].dt) + '</text><text x="' + (W - R) + '" y="' + (H - 6) + '" text-anchor="end">' + sd(data[n - 1].dt) + "</text>";
+    box.innerHTML = '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="กราฟแนวโน้มความดันตัวบน ตัวล่าง และชีพจร ' + n + ' ครั้งล่าสุด">' +
+      g + xl + line("sys", "var(--sys)") + line("dia", "var(--dia)") + line("hr", "var(--hr)") + "</svg>";
+  }
+
+  function renderList() {
+    var all = sorted(true);
+    $("count").textContent = all.length ? "(" + all.length + ")" : "";
+    $("exportBtn").disabled = !all.length;
+    var list = $("list");
+    if (!all.length) { list.innerHTML = '<div class="empty">ยังไม่มีประวัติ</div>'; return; }
+    list.innerHTML = all.map(function (r) {
+      var cat = category(r.sys, r.dia), btns;
+      if (confirmingId === r.id) {
+        btns = '<button type="button" class="small danger" data-act="confirmDel" data-id="' + esc(r.id) + '">ยืนยันลบ</button><button type="button" class="small" data-act="cancelDel" data-id="' + esc(r.id) + '">ไม่ลบ</button>';
+      } else {
+        btns = '<button type="button" class="small" data-act="edit" data-id="' + esc(r.id) + '">แก้ไข</button><button type="button" class="small" data-act="del" data-id="' + esc(r.id) + '">ลบ</button>';
+      }
+      return '<div class="item num' + (editingId === r.id ? " isEditing" : "") + '">' +
+        '<div><div class="when">' + esc(fmtDate(r.dt)) + '</div>' +
+        '<div class="vals"><span class="bpv"><span class="s">' + r.sys + '</span>/<span class="d">' + r.dia + '</span> <span class="unit">mmHg</span></span>' +
+        '<span class="hrv">' + r.hr + ' <span class="unit">bpm</span></span><span class="chip ' + cat.c + '">' + cat.t + "</span></div></div>" +
+        '<div class="btns">' + btns + "</div>" +
+        (r.note ? '<div class="note">' + esc(r.note) + "</div>" : "") + "</div>";
+    }).join("");
+  }
+
+  function render() { renderLatest(); renderChart(); renderList(); }
+
+  // ---------- form ----------
+  function showErr(msg) { var e = $("err"); e.textContent = msg || ""; e.hidden = !msg; }
+  function resetForm() {
+    editingId = null;
+    $("form").reset();
+    $("dt").value = nowLocal();
+    $("formTitle").textContent = "เพิ่มบันทึกใหม่";
+    $("saveBtn").textContent = "บันทึก";
+    $("cancelBtn").hidden = true;
+    $("formCard").classList.remove("editing");
+    showErr("");
+  }
+  function startEdit(id) {
+    var r = readings.find(function (x) { return x.id === id; });
+    if (!r) return;
+    editingId = id; confirmingId = null;
+    $("dt").value = r.dt; $("sys").value = r.sys; $("dia").value = r.dia; $("hr").value = r.hr; $("note").value = r.note || "";
+    $("formTitle").textContent = "แก้ไขบันทึก";
+    $("saveBtn").textContent = "บันทึกการแก้ไข";
+    $("cancelBtn").hidden = false;
+    $("formCard").classList.add("editing");
+    showErr("");
+    renderList();
+    $("formCard").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("sys").focus({ preventScroll: true });
+  }
+  function validate() {
+    var dt = $("dt").value;
+    var s = parseInt($("sys").value, 10), d = parseInt($("dia").value, 10), h = parseInt($("hr").value, 10);
+    if (!dt) return "กรุณาเลือกวันและเวลา";
+    if (!(s >= 50 && s <= 260)) return "ความดันตัวบนต้องอยู่ระหว่าง 50–260 mmHg";
+    if (!(d >= 30 && d <= 160)) return "ความดันตัวล่างต้องอยู่ระหว่าง 30–160 mmHg";
+    if (s <= d) return "ความดันตัวบนต้องมากกว่าตัวล่าง";
+    if (!(h >= 20 && h <= 250)) return "ชีพจรต้องอยู่ระหว่าง 20–250 ครั้งต่อนาที";
+    return { dt: dt, sys: s, dia: d, hr: h, note: $("note").value.trim() };
+  }
+
+  $("form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (!loaded) { showErr("ยังโหลดข้อมูลจาก Drive ไม่เสร็จ กรุณารอสักครู่"); return; }
+    var v = validate();
+    if (typeof v === "string") { showErr(v); return; }
+    showErr("");
+    var rec = { id: editingId || newId(), dt: v.dt, sys: v.sys, dia: v.dia, hr: v.hr, note: v.note, updated: Date.now() };
+    var wasEdit = !!editingId;
+    var i = readings.findIndex(function (r) { return r.id === rec.id; });
+    if (i >= 0) readings[i] = rec; else readings.push(rec);
+    resetForm();
+    render();
+    toast(wasEdit ? "แก้ไขบันทึกแล้ว" : "บันทึกแล้ว");
+    persist();
+  });
+  $("cancelBtn").addEventListener("click", function () { resetForm(); renderList(); });
+
+  $("list").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-act]");
+    if (!b) return;
+    var id = b.dataset.id, act = b.dataset.act;
+    if (act === "edit") startEdit(id);
+    else if (act === "del") { confirmingId = id; renderList(); }
+    else if (act === "cancelDel") { confirmingId = null; renderList(); }
+    else if (act === "confirmDel") {
+      readings = readings.filter(function (r) { return r.id !== id; });
+      confirmingId = null;
+      if (editingId === id) resetForm();
+      render();
+      toast("ลบบันทึกแล้ว");
+      persist();
+    }
+  });
+
+  // ---------- CSV export ----------
+  function csvCell(s) {
+    s = String(s == null ? "" : s);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;   // keep spreadsheets from running note text as a formula
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  $("exportBtn").addEventListener("click", function () {
+    var rows = [["วันเวลา", "SYS (mmHg)", "DIA (mmHg)", "HR (bpm)", "บันทึก"]];
+    sorted(false).forEach(function (r) { rows.push([r.dt.replace("T", " "), r.sys, r.dia, r.hr, r.note || ""]); });
+    var csv = "\uFEFF" + rows.map(function (r) { return r.map(csvCell).join(","); }).join("\r\n");
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var d = new Date();
+    var name = "vital-signs-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + ".csv";
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    toast("ส่งออกไฟล์ " + name + " แล้ว");
+  });
+})();
+</script>
+</body>
+</html>
